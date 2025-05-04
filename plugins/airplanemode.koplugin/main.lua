@@ -63,10 +63,10 @@ function AirPlaneMode:onSwitchAirPlane()
     ---------
     if settings_bk_exists == true and airplanemode_active == true then
         airplanemode = true
-        AirPlaneMode:turnoff()
+        AirPlaneMode:turnoff(self.settings_file, self.settings_bk)
     elseif settings_bk_exists == false and airplanemode_active == false then
         airplanemode = false
-        AirPlaneMode:turnon()
+        AirPlaneMode:turnon(self.settings_file, self.settings_bk)
     else
         logger.dbg("Failed to determine if bk exists or mode is active")
     end
@@ -104,9 +104,9 @@ function AirPlaneMode:backup(cur_file,bak_file)
     end
 end
 
-function AirPlaneMode:turnon()
+function AirPlaneMode:turnon(cur_file,bak_file)
     logger.dbg("AirPlane Mode - executing:turning on")
-    local current_config = self:backup(self.settings_file, self.settings_bk)
+    local current_config = self:backup(cur_file,bak_file)
     if current_config then
         -- mark airplane as active
         G_reader_settings:saveSetting("airplanemode",true)
@@ -136,10 +136,10 @@ function AirPlaneMode:turnon()
     end
 end
 
-function AirPlaneMode:turnoff()
+function AirPlaneMode:turnoff(cur_file,bak_file)
     logger.dbg("AirPlane Mode - executing:turning off")
-    if os.rename(self.settings_bk,self.settings_bk) then
-        os.rename(self.settings_bk,self.settings_file)
+    if os.rename(bak_file,bak_file) then
+        os.rename(bak_file,cur_file)
         -- restart koreader with refreshed settings
         UIManager:broadcastEvent(Event:new("Restart"))
     end
