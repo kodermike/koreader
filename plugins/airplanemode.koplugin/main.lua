@@ -1,11 +1,15 @@
 local Dispatcher = require("dispatcher")
 local Device = require("device")
 local LuaSettings = require("luasettings")
+local ConfirmBox = require("ui/widget/confirmbox")
 local UIManager = require("ui/uimanager")
+local InfoMessage = require("ui/widget/infomessage")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
 local util = require("util")
 local _ = require("gettext")
+local ffiutil = require("ffi/util")
+local lfs = require("libs/libkoreader-lfs")
 local airplanemode = false
 
 -- establish the main settings file
@@ -15,98 +19,109 @@ local AirPlaneMode = WidgetContainer:extend{
     name = "airplanemode",
     is_doc_only = false,
 }
+-- also verify if the airplanemode flag is set. we will use this to decide if something is funky
+local airplanemode_active = G_reader_settings:isTrue("airplanemode")
+logger.dbg("AirPlane Mode - we checked for an active setting",airplanemode_active)
 
-logger.dbg("we got past setting the widgetcontainer")
-
+local function isFile(filename)
+    if lfs.attributes(filename, "mode") == "file" then
+        logger.dbg("AirPlane Mode - found a file ",filename)
+        return true
+    end
+    logger.dbg("AirPlane Mode - did not find a file ",filename)
+    return false
+end
 function AirPlaneMode:onDispatcherRegisterActions()
     Dispatcher:registerAction("airplanemode_action", { category="none", event="SwitchAirPlane", title=_("AirPlane Mode"), general=true,})
 end
 
 function AirPlaneMode:init()
-    logger.dbg("Registering dispatch...")
+    logger.dbg("AirPlane Mode - Registering dispatch...")
     self:onDispatcherRegisterActions()
-    logger.dbg("Registering menu...")
+
+
+     ----------
+    -- if G_reader_settings == nil then
+    --    G_reader_settings = require("luasettings"):open(self.settings_file)
+    -- end
+
+    logger.dbg("AirPlane Mode - Registering menu...")
     self.ui.menu:registerToMainMenu(self)
    -- logger.dbg("Switch time")
    -- self:onSwitchAirPlane()
 end
 
-function AirPlaneMode:onSwitchAirPlane()
-    ----------
-    if G_reader_settings == nil then
-        G_reader_settings = require("luasettings"):open(settings_file)
-    end
 
+function AirPlaneMode:onSwitchAirPlane()
     self.settings_file = DataStorage:getDataDir().."/settings.reader.lua"
-    self.settings_bk = DataStorage:getDataDir().."/settings.reader.lua.current"
+    self.settings_bk = DataStorage:getDataDir().."/settings.reader.lua.airplane"
 
     -- test we can see the real settings file.
-    if os.rename(self.settings_file,self.settings_file) then
-        logger.dbg("Settings file confirmed to exist")
+    logger.dbg("AirPlane Mode - checking if this is a file ", self.settings_file)
+    if isFile(self.settings_file) then
+        logger.dbg("AirPlane Mode - Settings file confirmed to exist", self.settings_file)
     else
-        logger.err("Settings file not found! Abort!")
+        logger.err("AirPlane Mode [ERROR] - Settings file not found! Abort!", self.settings_file)
     end
 
     -- check if we currently have a backup of our settings running
-    logger.dbg("Checking if we already have a backup config", self.settings_bk)
+    logger.dbg("AirPlane Mode - Checking if we already have a backup config", self.settings_bk)
     self.settings_bk_exists = false
-    if os.rename(self.settings_bk,self.settings_bk) then
+    if isFile(self.settings_bk) then
         self.settings_bk_exists = true
     end
-
-    -- also verify if the airplanemode flag is set. we will use this to decide if something is funky
-    local airplanemode_active = false
-    if G_reader_settings:isTrue("airplanemode") then airplanemode_active = true end
-
-    logger.dbg("we checked for an active setting",airplanemode_active)
-
     ---------
-    if settings_bk_exists == true and airplanemode_active == true then
+    if self.settings_bk_exists == true and airplanemode_active == true then
         airplanemode = true
         AirPlaneMode:turnoff(self.settings_file, self.settings_bk)
-    elseif settings_bk_exists == false and airplanemode_active == false then
+    elseif self.settings_bk_exists == false and airplanemode_active == false then
         airplanemode = false
+        logger.dbg("AirPlane Mode - we're sending the settings file ",self.settings_file)
+        logger.dbg("AirPlane Mode - we're sending the backup file ",self.settings_bk)
         AirPlaneMode:turnon(self.settings_file, self.settings_bk)
     else
-        logger.dbg("Failed to determine if bk exists or mode is active")
+        logger.dbg("AirPlane Mode - Failed to determine if bk exists or mode is active")
     end
 end
 
-function AirPlaneMode:backup(cur_file,bak_file)
+function AirPlaneMode:backup(settings_file,backup_file)
     -- settings_file = settings_file or self.settings_file
-    logger.dbg("we have a settings file, "cur_file)
-    if os.rename(cur_file,cur_file) then
-        if lfs.attributes(cur_file, "mode") == "cur_file" then
-            -- lifted straight from reader.lua, including explanation. thank you lua gods
-            -- As an additional safety measure (to the ffiutil.fsync* calls used in util.writeToFile),
-            -- we only backup the settings_file to .old when it has not been modified in the last 60 seconds.
-            -- This should ensure in the case the fsync calls are not supported
-            -- that the OS may have itself sync'ed that settings_file content in the meantime.
-            local mtime = lfs.attributes(cur_file, "modification")
-            if mtime < os.time() - 60 then
-                -- os.rename(settings_file, settings_file .. ".current")
-                local orig = cur_file
-                local dest = bak_file
-                --open and read content file
-                local saved_settings = io.open(orig,"r")
-                local content = saved_settings:read("*a")
-                saved_settings:close()
-                --copy the content
-                local bk_file=io.open(dest,"w")
-                bk_file:write(content)
-                bk_file:close()
-                return os.rename(bak_file,bak_file) and true or false
-            end
-        end
+    logger.dbg("AirPlane Mode - we have a settings file, ",settings_file)
+    if isFile(settings_file) then
+
+        -- lifted straight from reader.lua, including explanation. thank you lua gods
+        -- As an additional safety measure (to the ffiutil.fsync* calls used in util.writeToFile),
+        -- we only backup the settings_file to .old when it has not been modified in the last 60 seconds.
+        -- This should ensure in the case the fsync calls are not supported
+        -- that the OS may have itself sync'ed that settings_file content in the meantime.
+        -- local mtime = lfs.attributes(settings_file, "modification")
+        -- if mtime < os.time() - 60 then
+            ffiutil.copyFile(settings_file,backup_file )
+            -- MPC if this works remove below block
+        --    local orig = settings_file
+        --    local dest = backup_file
+        --    --open and read content file
+        --    local saved_settings = io.open(orig,"r")
+        --    local content = saved_settings:read("*a")
+        --    saved_settings:close()
+        --    --copy the content
+        --    local bk_file=io.open(dest,"w")
+        --    bk_file:write(content)
+        --    bk_file:close()
+            return isFile(backup_file) and true or false
+
+        -- end
     else
-        logger.err("Failed to find settings file at: ",cur_file)
+        logger.err("AirPlane Mode [ERROR] - Failed to find settings file at: ",settings_file)
         return false
     end
 end
 
-function AirPlaneMode:turnon(cur_file,bak_file)
+function AirPlaneMode:turnon(settings_file,backup_file)
     logger.dbg("AirPlane Mode - executing:turning on")
-    local current_config = self:backup(cur_file,bak_file)
+    logger.dbg("AirPlane Mode [turning on] settings: ", settings_file)
+    logger.dbg("AirPlane Mode [turning on] backup: ", backup_file)
+    local current_config = self:backup(settings_file,backup_file)
     if current_config then
         -- mark airplane as active
         G_reader_settings:saveSetting("airplanemode",true)
@@ -130,18 +145,57 @@ function AirPlaneMode:turnon(cur_file,bak_file)
         if Device:hasWifiManager() then
             NetworkMgr:disableWifi()
         end
-        return
+        logger.dbg("AirPlane Mode - restarting koreader with disabled settings")
+        UIManager:show(ConfirmBox:new{
+            dismissable = false,
+            ok_callback = function()
+                if Device:canRestart() then
+                    text = _("KOReader needs to be restarted to finish enabling AirPlane Mode."),
+                    UIManager:restartKOReader()
+                else
+                    text = _("You will need to restart KOReader to finish enabling AirPlane Mode."),
+                    UIManager:quit()
+                end
+            end,
+        })
     else
-        logger.err("Failed to create backup file and execute")
+        logger.err("AirPlane Mode [ERROR] - Failed to create backup file and execute")
     end
 end
 
-function AirPlaneMode:turnoff(cur_file,bak_file)
+function AirPlaneMode:turnoff(settings_file,backup_file)
     logger.dbg("AirPlane Mode - executing:turning off")
-    if os.rename(bak_file,bak_file) then
-        os.rename(bak_file,cur_file)
+    if isFile(backup_file) then
+        logger.dbg("AirPlane Mode - restoring our backup")
+        ffiutil.copyFile(backup_file,settings_file)
+        -- remove backup file
+        local ok, err = os.remove(backup_file)
+        if ok then
+            logger.dbg("AirPlane Mode - removed backup file")
+        else
+            logger.err("AirPlane Mode - file not removed!", err)
+        end
+        G_reader_settings:saveSetting("airplanemode",false)
         -- restart koreader with refreshed settings
-        UIManager:broadcastEvent(Event:new("Restart"))
+
+        logger.dbg("AirPlane Mode - restarting koreader with original settings")
+        UIManager:show(ConfirmBox:new{
+            dismissable = false,
+
+            ok_callback = function()
+                if Device:canRestart() then
+                    text = _("KOReader needs to be restarted to finish disabling AirPlane Mode."),
+                    UIManager:restartKOReader()
+                else
+                    text = _("You will need to restart KOReader to finish disabling AirPlane Mode."),
+                    UIManager:quit()
+                end
+            end,
+        })
+
+
+    else
+        logger.err("AirPlane Mode [ERROR] - unable to find backup config!", backup_file)
     end
 end
 
@@ -151,11 +205,12 @@ function AirPlaneMode:addToMainMenu(menu_items)
         text = _("AirPlane Mode"),
         sorting_hint = "more_tools",
         callback = function()
-            if not airplanemode == true then
-                AirPlaneMode:turnon()
-            else
-                AirPlaneMode:turnoff()
-            end
+            AirPlaneMode:onSwitchAirPlane()
+            -- if not airplanemode == true then
+            --    AirPlaneMode:turnon()
+            -- else
+            --    AirPlaneMode:turnoff()
+            -- end
         end,
     }
 end
