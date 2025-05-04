@@ -146,18 +146,25 @@ function AirPlaneMode:turnon(settings_file,backup_file)
             NetworkMgr:disableWifi()
         end
         logger.dbg("AirPlane Mode - restarting koreader with disabled settings")
-        UIManager:show(ConfirmBox:new{
-            dismissable = false,
-            ok_callback = function()
-                if Device:canRestart() then
-                    text = _("KOReader needs to be restarted to finish enabling AirPlane Mode."),
-                    UIManager:restartKOReader()
-                else
-                    text = _("You will need to restart KOReader to finish enabling AirPlane Mode."),
+        if Device:canRestart() then
+            UIManager:show(ConfirmBox:new{
+                dismissable = false,
+                text = _("KOReader needs to be restarted to finish enabling AirPlane Mode."),
+                ok_text = _("Restart"),
+                ok_callback = function()
+                        UIManager:restartKOReader()
+                end,
+            })
+        else
+            UIManager:show(ConfirmBox:new{
+                dismissable = false,
+                text = _("You will need to restart KOReader to finish enabling AirPlane Mode."),
+                ok_text = _("OK"),
+                ok_callback = function()
                     UIManager:quit()
-                end
-            end,
-        })
+                end,
+            })
+        end
     else
         logger.err("AirPlane Mode [ERROR] - Failed to create backup file and execute")
     end
@@ -179,21 +186,25 @@ function AirPlaneMode:turnoff(settings_file,backup_file)
         -- restart koreader with refreshed settings
 
         logger.dbg("AirPlane Mode - restarting koreader with original settings")
-        UIManager:show(ConfirmBox:new{
-            dismissable = false,
-
-            ok_callback = function()
-                if Device:canRestart() then
-                    text = _("KOReader needs to be restarted to finish disabling AirPlane Mode."),
-                    UIManager:restartKOReader()
-                else
-                    text = _("You will need to restart KOReader to finish disabling AirPlane Mode."),
+        if Device:canRestart() then
+            UIManager:show(ConfirmBox:new{
+                dismissable = false,
+                text = _("KOReader needs to be restarted to finish disabling AirPlane Mode."),
+                ok_text = _("Restart"),
+                ok_callback = function()
+                        UIManager:restartKOReader()
+                end,
+            })
+        else
+            UIManager:show(ConfirmBox:new{
+                dismissable = false,
+                text = _("You will need to restart KOReader to finish disabling AirPlane Mode."),
+                ok_text = _("OK"),
+                ok_callback = function()
                     UIManager:quit()
-                end
-            end,
-        })
-
-
+                end,
+            })
+        end
     else
         logger.err("AirPlane Mode [ERROR] - unable to find backup config!", backup_file)
     end
