@@ -1,5 +1,6 @@
 local Dispatcher = require("dispatcher")
 local Device = require("device")
+local NetworkMgr = require("ui/network/manager")
 local LuaSettings = require("luasettings")
 local ConfirmBox = require("ui/widget/confirmbox")
 local UIManager = require("ui/uimanager")
@@ -84,7 +85,7 @@ function AirPlaneMode:turnon(settings_file,backup_file)
         G_reader_settings:saveSetting("wifi_enable_action","ignore")
         G_reader_settings:saveSetting("wifi_disable_action","turn_off")
 
-        if Device:hasWifiManager() then
+        if NetworkMgr:sysfsInterfaceOperational() then
             NetworkMgr:disableWifi()
         end
 
