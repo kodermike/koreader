@@ -65,25 +65,31 @@ function AirPlaneMode:turnon(settings_file,backup_file)
         -- mark airplane as active
         G_reader_settings:saveSetting("airplanemode",true)
         -- disable plugins, wireless, all of it
+
         G_reader_settings:saveSetting("auto_restore_wifi",false)
         G_reader_settings:saveSetting("auto_disable_wifi",true)
         G_reader_settings:saveSetting("http_proxy_enabled",false)
-        G_reader_settings:saveSetting("kosync",{autosync = false})
-        G_reader_settings:saveSetting("plugins_disabled", {
-            goodreads = true,
-            newsdownloader = true,
-            wallabag = true,
-            calibre = true,
-            kosync = true,
-            opds = true,
-            SSH = true,
-            timesync = true,
-        })
+        G_reader_settings:saveSetting("kosync",{auto_sync = false})
+
+        local check_plugins = {"goodreads","newsdownloader","wallabag","calibre","kosync","opds","SSH","timesync"}
+        local networked_plugins = G_reader_settings:readSetting("plugins_disabled") or {}
+        for __, plugin in ipairs(check_plugins) do
+            logger.dbg("checking plugin ",plugin)
+            if G_reader_settings:hasNot("plugins_disabled", plugin) then
+                networked_plugins[plugin] = true
+            end
+        end
+        G_reader_settings:saveSetting("plugins_disabled", networked_plugins)
+
         G_reader_settings:saveSetting("wifi_enable_action","ignore")
         G_reader_settings:saveSetting("wifi_disable_action","turn_off")
+
         if Device:hasWifiManager() then
             NetworkMgr:disableWifi()
         end
+
+        -- TODO: ADD NOTICE HERE IF THIS WORKS
+
         logger.dbg("AirPlane Mode - restarting koreader with disabled settings")
         self.settings_bk_exists = true
         self.airplanemode_active = true
@@ -115,35 +121,98 @@ function AirPlaneMode:turnoff(settings_file,backup_file)
     logger.dbg("AirPlane Mode - executing:turning off and copying ",backup_file,settings_file)
     logger.dbg("AirPlane Mode - restoring our backup")
 
-    local file_path = settings_file or DataStorage:getDataDir() .. "/settings.reader.lua"
-    local new = AirPlaneMode:extend{
-        file = file_path,
-    }
-    local ok, stored
+    G_reader_settings:saveSetting("airplanemode",false)
+    local BK_Settings = require("luasettings"):open(DataStorage:getDataDir().."/settings.reader.lua.airport")
+
+    if BK_Settings:has("auto_restore_wifi") then
+        local old_auto_restore_wifi = BK_Settings:readSetting("auto_restore_wifi")
+        logger.dbg("AirPlane Mode - old_auto_restore_wifi ",old_auto_restore_wifi)
+        -- flip the real config
+        G_reader_settings:saveSetting("auto_restore_wifi",old_auto_restore_wifi)
+    else
+        G_reader_settings:delSetting("auto_restore_wifi")
+    end
+
+    if BK_Settings:has("auto_disable_wifi") then
+        local old_auto_disable_wifi = BK_Settings:readSetting("auto_disable_wifi")
+        logger.dbg("AirPlane Mode - old_auto_disable_wifi ",old_auto_disable_wifi)
+        -- flip the real config
+        G_reader_settings:saveSetting("auto_disable_wifi",old_auto_disable_wifi)
+    else
+        G_reader_settings:delSetting("auto_disable_wifi")
+    end
+
+    if BK_Settings:has("http_proxy_enabled") then
+        local old_http_proxy_enabled = BK_Settings:readSetting("http_proxy_enabled")
+        logger.dbg("AirPlane Mode - old_http_proxy_enabled ",old_http_proxy_enabled)
+        -- flip the real config
+        G_reader_settings:saveSetting("http_proxy_enabled",old_http_proxy_enabled)
+    end
+
+    if BK_Settings:has("kosync",{auto_sync}) then
+        local old_kosync =  BK_Settings:readSetting("kosync",{auto_sync})
+        logger.dbg("AirPlane Mode - old_kosync ",old_kosync)
+        -- flip the real config
+        G_reader_settings:saveSetting("kosync",old_kosync)
+    end
+
+    local old_networked_plugins = nil
+    local old_check_plugins = {"goodreads","newsdownloader","wallabag","calibre","kosync","opds","SSH","timesync"}
+    local old_networked_plugins = BK_Settings:readSetting("plugins_disabled") or {}
+    for __, oldplugin in ipairs(old_check_plugins) do
+        logger.dbg("checking plugin ",oldplugin)
+        if BK_Settings:hasNot("plugins_disabled", oldplugin) then
+            G_reader_settings:delSetting("plugins_disabled", oldplugin)
+        end
+    end
+
+    if BK_Settings:has("wifi_enable_action") then
+        local wifi_enable_action = BK_Settings:readSetting("wifi_enable_action")
+        logger.dbg("AirPlane Mode - oldwifi_enable_action_kosync ",wifi_enable_action)
+        G_reader_settings:saveSetting("wifi_enable_action",wifi_enable_action)
+    else
+        G_reader_settings:delSetting("wifi_enable_action")
+    end
 
 
-    ok, stored = pcall(dofile, new.file..".airplane")
-    if ok and stored then
-        new.data = stored
-        logger.dbg("AirPlane Mode - writing data to ", new.file)
-        util.writeToFile(dump(new.data, nil, true), new.file, true, true, true)
+    if BK_Settings:has("wifi_disable_action") then
+        local wifi_disable_action = BK_Settings:readSetting("wifi_disable_action")
+        logger.dbg("AirPlane Mode - wifi_disable_action ",wifi_disable_action)
+        G_reader_settings:saveSetting("wifi_disable_action",wifi_disable_action)
+    else
+        G_reader_settings:delSetting("wifi_disable_action")
+    end
 
-        G_reader_settings:saveSetting("airplanemode",false)
-        -- restart koreader with refreshed settings
-        logger.dbg("AirPlane Mode - restarting koreader with original settings")
-        self.airplanemode_active = false
+
+    if Device:hasWifiManager() then
+        NetworkMgr:enableWifi()
+    end
+
+    logger.dbg("AirPlane Mode - restarting koreader with enabled settings")
+    self.settings_bk_exists = true
+    self.airplanemode_active = true
+    if Device:canRestart() then
         UIManager:show(ConfirmBox:new{
             dismissable = false,
-                text = _("AirPlane Mode disabled."),
-                ok_text = _("OK"),
-                ok_callback = function()
-                    UIManager:close(self)
-                end,
+            text = _("KOReader needs to be restarted to finish disabling AirPlane Mode."),
+            ok_text = _("Restart"),
+            ok_callback = function()
+                    UIManager:restartKOReader()
+            end,
         })
     else
-        logger.err("AirPlane Mode [ERROR] - unable to find backup config!", backup_file)
+        UIManager:show(ConfirmBox:new{
+            dismissable = false,
+            text = _("You will need to restart KOReader to finish disabling AirPlane Mode."),
+            ok_text = _("OK"),
+            ok_callback = function()
+                UIManager:quit()
+            end,
+        })
     end
+
 end
+
 
 function AirPlaneMode:addToMainMenu(menu_items)
     local rootpath = lfs.currentdir()
