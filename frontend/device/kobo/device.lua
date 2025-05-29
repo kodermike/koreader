@@ -1042,7 +1042,10 @@ function Kobo:initNetworkManager(NetworkMgr)
     end
 
     function NetworkMgr:restoreWifiAsync()
-        os.execute("./restore-wifi-async.sh")
+        local wifi_was_on = G_reader_settings:isTrue("wifi_was_on")
+        if wifi_was_on and G_reader_settings:isTrue("auto_restore_wifi") then
+            os.execute("./restore-wifi-async.sh")
+        end
     end
 
     NetworkMgr.isWifiOn = NetworkMgr.sysfsWifiOn
