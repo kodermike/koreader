@@ -4,6 +4,7 @@ local Device =  require("device")
 local Dispatcher = require("dispatcher")
 local InfoMessage = require("ui/widget/infomessage")  -- luacheck:ignore
 local InputDialog = require("ui/widget/inputdialog")
+local LuaSettings = require("luasettings")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local ffiutil = require("ffi/util")
@@ -42,6 +43,15 @@ end
 function SSH:start()
     if self:isRunning() then
         logger.dbg("[Network] Not starting SSH server, already running.")
+        return
+    end
+    if G_reader_settings == nil then
+        G_reader_settings = LuaSettings:open(DataStorage:getDataDir().."/settings.reader.lua")
+    end
+    local plugins_disabled = G_reader_settings:readSetting("plugins_disabled") or nil
+    if plugins_disabled and plugins_disabled["SSH"] then
+        logger.dbg("[Network] Aborting attemot to start SSH - plugin is disabled")
+        if self:isRunning() then self:stop() end
         return
     end
 
@@ -96,18 +106,70 @@ function SSH:start()
 end
 
 function SSH:isRunning()
-    return util.pathExists("/tmp/dropbear_koreader.pid")
+    if util.pathExists("/tmp/dropbear_koreader.pid") then
+        return
+    end
+
+end
+
+local function pidcheck()
+    local pids = os.execute("pidof dropbear")
+    return pids or nil
+end
+
+local function stopmessage(success)
+    if success then
+        UIManager:show(InfoMessage:new {
+            text = T(_("SSH server stopped.")),
+            timeout = 2,
+        })
+        return
+    else
+        local info = InfoMessage:new{
+            icon = "notice-warning",
+            text = _("Failed to stop SSH server."),
+            timeout = 2,
+        }
+        UIManager:show(info)
+        return
+    end
 end
 
 function SSH:stop()
-    os.execute("cat /tmp/dropbear_koreader.pid | xargs kill")
-    UIManager:show(InfoMessage:new {
-        text = T(_("SSH server stopped.")),
-        timeout = 2,
-    })
-
+    if util.pathExists("/tmp/dropbear_koreader.pid") then
+        os.execute("cat /tmp/dropbear_koreader.pid | xargs kill")
+    end
     if self:isRunning() then
-        os.remove("/tmp/dropbear_koreader.pid")
+        if util.pathExists("/tmp/dropbear_koreader.pid") then
+            os.remove("/tmp/dropbear_koreader.pid")
+        end
+        local killcount = 0
+        local pidpass = pidcheck()
+        if pidpass then -- our original kill failed
+            repeat
+                logger.dbg("[Network][SSH] Attempting to kill pids:",pidcheck)
+                os.execute("kill "..pidpass)
+                pidpass = pidcheck()
+                killcount = killcount +1
+                logger.dbg("[Network][SSH] Attempt",killcount," to kill dropbear")
+                if killcount > 3 then
+                    logger.dbg("[Network][SSH] Sending kill -9 for dropbear")
+                    os.execute("kill -9 "..pidpass) --nuclear option
+                    pidpass = pidcheck() --check again now that we've gone nuclear
+                    if pidpass then
+                        logger.error("[Network][SSH] SSH daemon cannot be stopped") --tag it
+                        stopmessage(false) --note it
+                        pidpass = nil -- kill our loop, we've done all we can here
+                    else
+                        stopmessage(true)
+                    end
+                end
+            until pidpass == nil or pidpass == ''
+        else
+            stopmessage(true)
+        end
+    else
+        stopmessage(true)
     end
 
     -- Plug the hole in the Kindle's firewall
