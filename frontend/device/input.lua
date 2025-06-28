@@ -1490,6 +1490,8 @@ function Input:waitEvent(now, deadline)
         now = nil
     end
 
+    logger.dbg("MIKE - ok is",ok,"and ev is",ev,"MIKE maybe loop here?")
+    logger.dbg("MIKE - can you dump self?",self)
     if ok and ev then
         local handled = {}
         -- We're guaranteed that ev is an array of event tables. Might be an array of *one* event, but an array nonetheless ;).
