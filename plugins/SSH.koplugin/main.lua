@@ -1,8 +1,8 @@
 local BD = require("ui/bidi")
 local DataStorage = require("datastorage")
-local Device =  require("device")
+local Device = require("device")
 local Dispatcher = require("dispatcher")
-local InfoMessage = require("ui/widget/infomessage")  -- luacheck:ignore
+local InfoMessage = require("ui/widget/infomessage") -- luacheck:ignore
 local InputDialog = require("ui/widget/inputdialog")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
@@ -17,11 +17,11 @@ local T = ffiutil.template
 -- reads the authorized_keys file from the relative path: settings/SSH/authorized_keys
 
 local path = DataStorage:getFullDataDir()
-if not util.pathExists("dropbear") then
-    return { disabled = true, }
-end
+-- if not util.pathExists("dropbear") then
+--     return { disabled = true, }
+-- end
 
-local SSH = WidgetContainer:extend{
+local SSH = WidgetContainer:extend {
     name = "SSH",
     is_doc_only = false,
 }
@@ -51,7 +51,7 @@ function SSH:start()
         "-R",
         "-p", self.SSH_port,
         "-P /tmp/dropbear_koreader.pid")
-     if self.allow_no_password then
+    if self.allow_no_password then
         cmd = string.format("%s %s", cmd, "-n")
     end
 
@@ -73,23 +73,23 @@ function SSH:start()
             fi]])
     end
 
-    if not util.pathExists(path.."/settings/SSH/") then
-        os.execute("mkdir "..path.."/settings/SSH")
+    if not util.pathExists(path .. "/settings/SSH/") then
+        os.execute("mkdir " .. path .. "/settings/SSH")
     end
     logger.dbg("[Network] Launching SSH server : ", cmd)
     if os.execute(cmd) == 0 then
-        local info = InfoMessage:new{
-                timeout = 10,
-                -- @translators: %1 is the SSH port, %2 is the network info.
-                text = T(_("SSH server started.\n\nSSH port: %1\n%2"),
-                    self.SSH_port,
-                    Device.retrieveNetworkInfo and Device:retrieveNetworkInfo() or _("Could not retrieve network info.")),
+        local info = InfoMessage:new {
+            timeout = 10,
+            -- @translators: %1 is the SSH port, %2 is the network info.
+            text = T(_("SSH server started.\n\nSSH port: %1\n%2"),
+                self.SSH_port,
+                Device.retrieveNetworkInfo and Device:retrieveNetworkInfo() or _("Could not retrieve network info.")),
         }
         UIManager:show(info)
     else
-        local info = InfoMessage:new{
-                icon = "notice-warning",
-                text = _("Failed to start SSH server."),
+        local info = InfoMessage:new {
+            icon = "notice-warning",
+            text = _("Failed to start SSH server."),
         }
         UIManager:show(info)
     end
@@ -100,25 +100,27 @@ function SSH:isRunning()
 end
 
 function SSH:stop()
-    os.execute("cat /tmp/dropbear_koreader.pid | xargs kill")
-    UIManager:show(InfoMessage:new {
-        text = T(_("SSH server stopped.")),
-        timeout = 2,
-    })
+    logger.dbg("AIRPLANE STOPPED ME - SSH")
+    return true
+    -- os.execute("cat /tmp/dropbear_koreader.pid | xargs kill")
+    -- UIManager:show(InfoMessage:new {
+    --     text = T(_("SSH server stopped.")),
+    --     timeout = 2,
+    -- })
 
-    if self:isRunning() then
-        os.remove("/tmp/dropbear_koreader.pid")
-    end
+    -- if self:isRunning() then
+    --     os.remove("/tmp/dropbear_koreader.pid")
+    -- end
 
-    -- Plug the hole in the Kindle's firewall
-    if Device:isKindle() then
-        os.execute(string.format("%s %s %s",
-            "iptables -D INPUT -p tcp --dport", self.SSH_port,
-            "-m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT"))
-        os.execute(string.format("%s %s %s",
-            "iptables -D OUTPUT -p tcp --sport", self.SSH_port,
-            "-m conntrack --ctstate ESTABLISHED -j ACCEPT"))
-    end
+    -- -- Plug the hole in the Kindle's firewall
+    -- if Device:isKindle() then
+    --     os.execute(string.format("%s %s %s",
+    --         "iptables -D INPUT -p tcp --dport", self.SSH_port,
+    --         "-m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT"))
+    --     os.execute(string.format("%s %s %s",
+    --         "iptables -D OUTPUT -p tcp --sport", self.SSH_port,
+    --         "-m conntrack --ctstate ESTABLISHED -j ACCEPT"))
+    -- end
 end
 
 function SSH:onToggleSSHServer()
@@ -130,7 +132,7 @@ function SSH:onToggleSSHServer()
 end
 
 function SSH:show_port_dialog(touchmenu_instance)
-    self.port_dialog = InputDialog:new{
+    self.port_dialog = InputDialog:new {
         title = _("Choose SSH port"),
         input = self.SSH_port,
         input_type = "number",
@@ -195,9 +197,9 @@ function SSH:addToMainMenu(menu_items)
                 keep_menu_open = true,
                 enabled_func = function() return not self:isRunning() end,
                 callback = function()
-                    local info = InfoMessage:new{
+                    local info = InfoMessage:new {
                         timeout = 60,
-                        text = T(_("Put your public SSH keys in\n%1"), BD.filepath(path.."/settings/SSH/authorized_keys")),
+                        text = T(_("Put your public SSH keys in\n%1"), BD.filepath(path .. "/settings/SSH/authorized_keys")),
                     }
                     UIManager:show(info)
                 end,
@@ -220,12 +222,13 @@ function SSH:addToMainMenu(menu_items)
                     G_reader_settings:flipNilOrFalse("SSH_autostart")
                 end,
             },
-       }
+        }
     }
 end
 
 function SSH:onDispatcherRegisterActions()
-    Dispatcher:registerAction("toggle_ssh_server", { category = "none", event = "ToggleSSHServer", title = _("Toggle SSH server"), general=true})
+    Dispatcher:registerAction("toggle_ssh_server",
+        { category = "none", event = "ToggleSSHServer", title = _("Toggle SSH server"), general = true })
 end
 
 return SSH
